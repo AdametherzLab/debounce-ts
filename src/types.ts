@@ -26,26 +26,31 @@ export interface ThrottleOptions {
 export type TimerHandle = ReturnType<typeof setTimeout>;
 
 /**
- * Generic callback function signature.
+ * Generic callback function signature with typed `this` context.
+ * @template TThis - Type of the `this` context within the function.
  * @template TArgs - Tuple type of function arguments
  * @template TReturn - Return type of the function
  */
-export type GenericCallback<TArgs extends readonly unknown[], TReturn> = (
+export type GenericCallback<TThis, TArgs extends readonly unknown[], TReturn> = (
+  this: TThis,
   ...args: TArgs
 ) => TReturn;
 
 /**
  * A debounced function wrapping the original callable with scheduling control.
+ * Preserves the `this` context type from the original function.
+ * @template TThis - Type of the `this` context within the original function.
  * @template TArgs - Tuple type of the original function arguments
  * @template TReturn - Return type of the original function
  */
-export interface DebouncedFunction<TArgs extends readonly unknown[], TReturn> {
+export interface DebouncedFunction<TThis, TArgs extends readonly unknown[], TReturn> {
   /**
    * Invoke the debounced function with the provided arguments.
+   * The `this` context will be preserved from the call site.
    * @param args - Arguments to pass to the original function
    * @returns The result if invoked immediately, otherwise undefined
    */
-  (...args: TArgs): TReturn | undefined;
+  (this: TThis, ...args: TArgs): TReturn | undefined;
 
   /**
    * Cancel any pending debounced invocations.
@@ -67,16 +72,19 @@ export interface DebouncedFunction<TArgs extends readonly unknown[], TReturn> {
 
 /**
  * A throttled function wrapping the original callable with rate-limiting control.
+ * Preserves the `this` context type from the original function.
+ * @template TThis - Type of the `this` context within the original function.
  * @template TArgs - Tuple type of the original function arguments
  * @template TReturn - Return type of the original function
  */
-export interface ThrottledFunction<TArgs extends readonly unknown[], TReturn> {
+export interface ThrottledFunction<TThis, TArgs extends readonly unknown[], TReturn> {
   /**
    * Invoke the throttled function with the provided arguments.
+   * The `this` context will be preserved from the call site.
    * @param args - Arguments to pass to the original function
    * @returns The result if invoked immediately, otherwise undefined
    */
-  (...args: TArgs): TReturn | undefined;
+  (this: TThis, ...args: TArgs): TReturn | undefined;
 
   /**
    * Cancel any pending throttled invocations.

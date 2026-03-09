@@ -4,22 +4,31 @@ import type { DebounceOptions, TimerHandle, DebouncedFunction } from "./types.js
  * Creates a debounced function that delays invoking the callback until after
  * a specified wait period has elapsed since the last invocation.
  * 
- * @param callback - The function to debounce
+ * Type-safe `this` context: The returned debounced function preserves the `this` type
+ * of the original callback, allowing proper typing when using class methods or
+ * explicit `this` parameters.
+ * 
+ * @param callback - The function to debounce. Can have an explicit `this` type.
  * @param wait - The number of milliseconds to delay
  * @param options - Configuration options for leading/trailing edge behavior
  * @returns A debounced function with cancel, flush, and pending methods
  * @throws {RangeError} If wait is negative or maxWait is less than wait
  * @throws {Error} If both leading and trailing are false
  * @example
- * const debounced = debounce((x: string) => console.log(x), 100);
- * debounced("a");
- * debounced("b"); // Only "b" will be logged after 100ms
+ * // With explicit this context
+ * class Counter {
+ *   value = 0;
+ *   increment() { this.value++; }
+ * }
+ * const counter = new Counter();
+ * const debounced = debounce(counter.increment, 100);
+ * debounced.call(counter); // Typesafe this context
  */
-export function debounce<TArgs extends readonly unknown[], TReturn>(
-  callback: (...args: TArgs) => TReturn,
+export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
+  callback: (this: TThis, ...args: TArgs) => TReturn,
   wait: number,
   options: DebounceOptions = {}
-): DebouncedFunction<TArgs, TReturn> {
+): DebouncedFunction<TThis, TArgs, TReturn> {
   if (wait < 0) {
     throw new RangeError("wait must be a non-negative number");
   }
@@ -36,15 +45,18 @@ export function debounce<TArgs extends readonly unknown[], TReturn>(
   let timerId: TimerHandle | undefined;
   let maxTimerId: TimerHandle | undefined;
   let lastArgs: TArgs | undefined;
+  let lastThis: TThis | undefined;
   let lastCallTime: number | undefined;
   let lastInvokeTime = 0;
   let result: TReturn | undefined;
 
   function invokeFunc(time: number): TReturn {
     const args = lastArgs!;
+    const context = lastThis!;
     lastArgs = undefined;
+    lastThis = undefined;
     lastInvokeTime = time;
-    result = callback(...args);
+    result = callback.apply(context, args);
     return result;
   }
 
@@ -130,12 +142,14 @@ export function debounce<TArgs extends readonly unknown[], TReturn>(
       return invokeFunc(time);
     }
     lastArgs = undefined;
+    lastThis = undefined;
     return result;
   }
 
   function cancel(): void {
     clearTimers();
     lastArgs = undefined;
+    lastThis = undefined;
     lastCallTime = undefined;
     lastInvokeTime = 0;
   }
@@ -155,11 +169,12 @@ export function debounce<TArgs extends readonly unknown[], TReturn>(
     return timerId !== undefined || maxTimerId !== undefined;
   }
 
-  function debounced(...args: TArgs): TReturn | undefined {
+  function debounced(this: TThis, ...args: TArgs): TReturn | undefined {
     const time = Date.now();
     const isInvoking = shouldInvoke(time);
 
     lastArgs = args;
+    lastThis = this;
     lastCallTime = time;
 
     if (isInvoking) {
@@ -182,5 +197,5 @@ export function debounce<TArgs extends readonly unknown[], TReturn>(
   debounced.flush = flush;
   debounced.pending = pending;
 
-  return debounced as DebouncedFunction<TArgs, TReturn>;
+  return debounced as DebouncedFunction<TThis, TArgs, TReturn>;
 }
