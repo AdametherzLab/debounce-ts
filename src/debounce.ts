@@ -51,10 +51,20 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
     lastInvokeTime = time;
     try {
       const result = callback.apply(context, args);
-      currentResolve?.(result);
+      
+      if (result && typeof result.then === 'function') {
+        result.then(
+          (resolvedValue) => currentResolve?.(resolvedValue),
+          (error) => currentReject?.(error)
+        ).finally(() => {
+          currentPromise = currentResolve = currentReject = undefined;
+        });
+      } else {
+        currentResolve?.(result);
+        currentPromise = currentResolve = currentReject = undefined;
+      }
     } catch (error) {
       currentReject?.(error);
-    } finally {
       currentPromise = currentResolve = currentReject = undefined;
     }
   }

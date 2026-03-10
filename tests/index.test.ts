@@ -35,6 +35,45 @@ describe("Promise-based Debounce/Throttle", () => {
       d.cancel();
       await expect(p).rejects.toThrow("Cancelled");
     });
+
+    it("should resolve with async callback result", async () => {
+      const fn = jest.fn(async (n: number) => n * 2);
+      const d = debounce(fn, 100);
+
+      const p = d(10);
+      jest.advanceTimersByTime(100);
+
+      await expect(p).resolves.toBe(20);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it("should reject when async callback throws", async () => {
+      const error = new Error("Async error");
+      const fn = jest.fn(async () => { throw error; });
+      const d = debounce(fn, 100);
+
+      const p = d();
+      jest.advanceTimersByTime(100);
+
+      await expect(p).rejects.toThrow(error);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it("should await async callback with delay", async () => {
+      const fn = jest.fn(async (n: number) => {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return n * 2;
+      });
+      const d = debounce(fn, 100);
+
+      const p = d(10);
+      jest.advanceTimersByTime(100);
+      jest.advanceTimersByTime(50);
+      await Promise.resolve();
+
+      await expect(p).resolves.toBe(20);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("throttle", () => {
@@ -74,6 +113,29 @@ describe("Promise-based Debounce/Throttle", () => {
       await expect(p1).rejects.toThrow("Superseded");
       await expect(p2).rejects.toThrow("Superseded");
       await expect(p3).resolves.toBe(3);
+    });
+
+    it("should resolve with async callback result", async () => {
+      const fn = jest.fn(async (n: number) => n);
+      const t = throttle(fn, 100);
+
+      const p = t(1);
+      jest.advanceTimersByTime(100);
+
+      await expect(p).resolves.toBe(1);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it("should handle trailing async call", async () => {
+      const fn = jest.fn(async (n: number) => n);
+      const t = throttle(fn, 100, { leading: false, trailing: true });
+
+      t(1);
+      const p2 = t(2);
+      jest.advanceTimersByTime(100);
+
+      await expect(p2).resolves.toBe(2);
+      expect(fn).toHaveBeenCalledTimes(1);
     });
   });
 });
