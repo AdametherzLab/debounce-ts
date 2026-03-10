@@ -1,50 +1,24 @@
 import type { DebounceOptions, TimerHandle, DebouncedFunction } from "./types.js";
 
-/**
- * Creates a debounced function that delays invoking the callback until after
- * a specified wait period has elapsed since the last invocation.
- * 
- * Type-safe `this` context: The returned debounced function preserves the `this` type
- * of the original callback, allowing proper typing when using class methods or
- * explicit `this` parameters.
- * 
- * @param callback - The function to debounce. Can have an explicit `this` type.
- * @param wait - The number of milliseconds to delay
- * @param options - Configuration options for leading/trailing edge behavior
- * @returns A debounced function with cancel, flush, and pending methods
- * @throws {RangeError} If wait is negative or maxWait is less than wait
- * @throws {Error} If both leading and trailing are false
- * @example
- * // With explicit this context
- * class Counter {
- *   value = 0;
- *   increment() { this.value++; }
- * }
- * const counter = new Counter();
- * const debounced = debounce(counter.increment, 100);
- * debounced.call(counter); // Typesafe this context
- */
 export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
   callback: (this: TThis, ...args: TArgs) => TReturn,
   wait: number,
-  options?: DebounceOptions // Make options optional
+  options?: DebounceOptions
 ): DebouncedFunction<TThis, TArgs, TReturn> {
-  if (wait < 0) {
-    throw new RangeError("wait must be a non-negative number");
-  }
+  if (wait < 0) throw new RangeError("wait must be non-negative");
 
-  const resolvedOptions: Required<DebounceOptions> = {
+  const resolvedOptions = {
     leading: options?.leading ?? false,
     trailing: options?.trailing ?? true,
-    maxWait: options?.maxWait,
+    maxWait: options?.maxWait
   };
 
   if (resolvedOptions.maxWait !== undefined && resolvedOptions.maxWait < wait) {
-    throw new RangeError("maxWait must be greater than or equal to wait");
+    throw new RangeError("maxWait must be ≥ wait");
   }
 
   if (!resolvedOptions.leading && !resolvedOptions.trailing) {
-    throw new Error("At least one of leading or trailing must be true");
+    throw new Error("At least one of leading/trailing must be true");
   }
 
   let timerId: TimerHandle | undefined;
@@ -53,154 +27,125 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
   let lastThis: TThis | undefined;
   let lastCallTime: number | undefined;
   let lastInvokeTime = 0;
-  let result: TReturn | undefined;
+  let currentPromise: Promise<TReturn> | undefined;
+  let currentResolve: (value: TReturn) => void;
+  let currentReject: (reason?: any) => void;
 
-  function invokeFunc(time: number): TReturn {
+  function clearTimers() {
+    clearTimeout(timerId);
+    clearTimeout(maxTimerId);
+    timerId = maxTimerId = undefined;
+  }
+
+  function cancelPendingPromise(reason: string) {
+    if (currentReject) {
+      currentReject(new Error(reason));
+      currentPromise = currentResolve = currentReject = undefined;
+    }
+  }
+
+  function invokeFunc(time: number) {
     const args = lastArgs!;
     const context = lastThis!;
-    lastArgs = undefined;
-    lastThis = undefined;
+    lastArgs = lastThis = undefined;
     lastInvokeTime = time;
-    result = callback.apply(context, args);
-    return result;
-  }
-
-  function startTimer(pendingWait: number): void {
-    timerId = setTimeout(timerExpired, pendingWait);
-  }
-
-  function startMaxTimer(): void {
-    if (resolvedOptions.maxWait !== undefined && maxTimerId === undefined) {
-      const elapsed = Date.now() - lastInvokeTime;
-      maxTimerId = setTimeout(maxTimerExpired, resolvedOptions.maxWait - elapsed);
+    try {
+      const result = callback.apply(context, args);
+      currentResolve?.(result);
+    } catch (error) {
+      currentReject?.(error);
+    } finally {
+      currentPromise = currentResolve = currentReject = undefined;
     }
   }
 
-  function clearTimers(): void {
-    if (timerId !== undefined) {
-      clearTimeout(timerId);
-      timerId = undefined;
-    }
-    if (maxTimerId !== undefined) {
-      clearTimeout(maxTimerId);
-      maxTimerId = undefined;
-    }
-  }
-
-  function leadingEdge(time: number): TReturn | undefined {
+  function leadingEdge(time: number) {
     lastInvokeTime = time;
-    startTimer(wait);
-    startMaxTimer();
-    return resolvedOptions.leading ? invokeFunc(time) : result;
-  }
-
-  function remainingWait(time: number): number {
-    const timeSinceLastCall = time - (lastCallTime ?? 0);
-    const timeSinceLastInvoke = time - lastInvokeTime;
-    const timeWaiting = wait - timeSinceLastCall;
-
-    if (resolvedOptions.maxWait === undefined) {
-      return timeWaiting;
+    timerId = setTimeout(timerExpired, wait);
+    if (resolvedOptions.maxWait) {
+      maxTimerId = setTimeout(maxTimerExpired, resolvedOptions.maxWait);
     }
-    
-    const maxWaitRemaining = resolvedOptions.maxWait - timeSinceLastInvoke;
-    return Math.min(timeWaiting, maxWaitRemaining);
-  }
-
-  function shouldInvoke(time: number): boolean {
-    const timeSinceLastCall = time - (lastCallTime ?? 0);
-    const timeSinceLastInvoke = time - lastInvokeTime;
-
-    return (
-      lastCallTime === undefined ||
-      timeSinceLastCall >= wait ||
-      timeSinceLastCall < 0 ||
-      (resolvedOptions.maxWait !== undefined && timeSinceLastInvoke >= resolvedOptions.maxWait)
-    );
-  }
-
-  function timerExpired(): void {
-    const time = Date.now();
-    if (shouldInvoke(time)) {
-      trailingEdge(time);
-    } else {
-      startTimer(remainingWait(time));
-    }
-  }
-
-  function maxTimerExpired(): void {
-    maxTimerId = undefined;
-    const time = Date.now();
-    if (timerId !== undefined) {
-      clearTimeout(timerId);
-      timerId = undefined;
-    }
-    if (lastArgs) {
+    if (resolvedOptions.leading) {
       invokeFunc(time);
     }
   }
 
-  function trailingEdge(time: number): TReturn | undefined {
+  function trailingEdge(time: number) {
     clearTimers();
-    
     if (resolvedOptions.trailing && lastArgs) {
-      return invokeFunc(time);
+      invokeFunc(time);
     }
-    lastArgs = undefined;
-    lastThis = undefined;
-    return result;
   }
 
-  function cancel(): void {
-    clearTimers();
-    lastArgs = undefined;
-    lastThis = undefined;
-    lastCallTime = undefined;
-    lastInvokeTime = 0;
-  }
-
-  function flush(): TReturn | undefined {
-    if (timerId !== undefined || maxTimerId !== undefined) {
-      const time = Date.now();
-      clearTimers();
-      if (lastArgs) {
-        return invokeFunc(time);
-      }
-    }
-    return result;
-  }
-
-  function pending(): boolean {
-    return timerId !== undefined || maxTimerId !== undefined;
-  }
-
-  function debounced(this: TThis, ...args: TArgs): TReturn | undefined {
+  function timerExpired() {
     const time = Date.now();
-    const isInvoking = shouldInvoke(time);
+    shouldInvoke(time) ? trailingEdge(time) : startTimer(remainingWait(time));
+  }
+
+  function maxTimerExpired() {
+    invokeFunc(Date.now());
+    clearTimers();
+  }
+
+  function shouldInvoke(time: number) {
+    return !lastCallTime || 
+      (time - lastCallTime >= wait) ||
+      (resolvedOptions.maxWait !== undefined && (time - lastInvokeTime) >= resolvedOptions.maxWait);
+  }
+
+  function remainingWait(time: number) {
+    const sinceLastCall = time - (lastCallTime ?? 0);
+    const sinceLastInvoke = time - lastInvokeTime;
+    return Math.min(wait - sinceLastCall, resolvedOptions.maxWait! - sinceLastInvoke);
+  }
+
+  function startTimer(wait: number) {
+    timerId = setTimeout(timerExpired, wait);
+  }
+
+  function debounced(this: TThis, ...args: TArgs): Promise<TReturn> {
+    const time = Date.now();
+    const invoking = shouldInvoke(time);
+
+    cancelPendingPromise("Superseded by subsequent call");
+    currentPromise = new Promise((resolve, reject) => {
+      currentResolve = resolve;
+      currentReject = reject;
+    });
 
     lastArgs = args;
     lastThis = this;
     lastCallTime = time;
 
-    if (isInvoking) {
-      if (timerId === undefined) {
-        return leadingEdge(lastCallTime);
+    if (invoking) {
+      if (!timerId) leadingEdge(lastCallTime);
+      else {
+        clearTimers();
+        invokeFunc(time);
       }
-      clearTimers();
-      return invokeFunc(time);
-    }
-
-    if (timerId === undefined) {
+    } else if (!timerId) {
       startTimer(wait);
-      startMaxTimer();
     }
 
-    return result;
+    return currentPromise;
   }
 
-  debounced.cancel = cancel;
-  debounced.flush = flush;
-  debounced.pending = pending;
+  debounced.cancel = () => {
+    clearTimers();
+    cancelPendingPromise("Cancelled");
+    lastInvokeTime = 0;
+    lastArgs = lastCallTime = undefined;
+  };
+
+  debounced.flush = () => {
+    if (timerId || maxTimerId) {
+      invokeFunc(Date.now());
+      clearTimers();
+    }
+    return undefined;
+  };
+
+  debounced.pending = () => !!timerId || !!maxTimerId;
 
   return debounced as DebouncedFunction<TThis, TArgs, TReturn>;
 }

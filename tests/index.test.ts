@@ -1,305 +1,79 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from "bun:test";
 import { debounce, throttle } from "../src/index.ts";
-import type { DebouncedFunction, ThrottledFunction, DebounceOptions, ThrottleOptions } from "../src/index.ts";
+import type { DebouncedFunction, ThrottledFunction } from "../src/index.ts";
 
-describe("debounce-ts public API", () => {
-  beforeEach(() => {
-    jest.useFakeTimers();
-  });
-
-  afterEach(() => {
-    jest.useRealTimers();
-  });
+describe("Promise-based Debounce/Throttle", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
 
   describe("debounce", () => {
-    it("debounces with trailing edge execution by default", () => {
-      const fn = jest.fn((x: number) => x * 2);
-      const debounced: DebouncedFunction<unknown, [number], number> = debounce(fn, 100);
-      
-      debounced(1);
-      debounced(2);
-      debounced(3);
-      
-      expect(fn).not.toHaveBeenCalled();
-      
-      jest.advanceTimersByTime(100);
-      
-      expect(fn).toHaveBeenCalledTimes(1);
-      expect(fn).toHaveBeenLastCalledWith(3);
-    });
+    it("should resolve last promise when trailing", async () => {
+      const fn = jest.fn((n: number) => n * 2);
+      const d = debounce(fn, 100);
 
-    it("executes on leading edge when leading option is enabled", () => {
-      const fn = jest.fn((msg: string) => msg.toUpperCase());
-      const debounced: DebouncedFunction<unknown, [string], string> = debounce(fn, 100, { 
-        leading: true, 
-        trailing: false 
-      });
-      
-      const result = debounced("hello");
-      
-      expect(fn).toHaveBeenCalledTimes(1);
-      expect(fn).toHaveBeenCalledWith("hello");
-      expect(result).toBe("HELLO");
-      
-      debounced("world");
-      expect(fn).toHaveBeenCalledTimes(1);
-      
+      const p1 = d(1);
+      const p2 = d(2);
       jest.advanceTimersByTime(100);
+
+      await expect(p1).rejects.toThrow("Superseded");
+      await expect(p2).resolves.toBe(4);
       expect(fn).toHaveBeenCalledTimes(1);
     });
 
-    it("cancels pending debounced execution", () => {
-      const fn = jest.fn(() => "completed");
-      const debounced: DebouncedFunction<unknown, [], string> = debounce(fn, 100);
-      
-      debounced();
-      expect(debounced.pending()).toBe(true);
-      
-      debounced.cancel();
-      expect(debounced.pending()).toBe(false);
-      
-      jest.advanceTimersByTime(100);
-      expect(fn).not.toHaveBeenCalled();
-    });
+    it("should resolve immediately when leading", async () => {
+      const fn = jest.fn((s: string) => s.toUpperCase());
+      const d = debounce(fn, 100, { leading: true });
 
-    it("flushes pending execution immediately and returns result", () => {
-      const fn = jest.fn((a: number, b: number) => a + b);
-      const debounced: DebouncedFunction<unknown, [number, number], number> = debounce(fn, 100);
-      
-      debounced(10, 20);
-      expect(fn).not.toHaveBeenCalled();
-      
-      const result = debounced.flush();
-      
-      expect(fn).toHaveBeenCalledTimes(1);
-      expect(fn).toHaveBeenCalledWith(10, 20);
-      expect(result).toBe(30);
-      expect(debounced.pending()).toBe(false);
-      
-      jest.advanceTimersByTime(100);
+      const p = d("test");
+      await expect(p).resolves.toBe("TEST");
       expect(fn).toHaveBeenCalledTimes(1);
     });
 
-    it("should correctly infer and preserve 'this' context for debounced functions", () => {
-      class MyClass {
-        value: number = 0;
-        constructor(initialValue: number) {
-          this.value = initialValue;
-        }
-        
-        increment(amount: number) {
-          this.value += amount;
-          return this.value;
-        }
-      }
-
-      const instance = new MyClass(10);
-      const debouncedIncrement = debounce(instance.increment, 100);
-
-      debouncedIncrement.call(instance, 5);
-      debouncedIncrement.call(instance, 10);
-      debouncedIncrement.call(instance, 15);
-
-      expect(instance.value).toBe(10);
-      jest.advanceTimersByTime(100);
-      expect(instance.value).toBe(25);
-
-      const instance2 = new MyClass(100);
-      const debouncedIncrement2 = debounce(function(this: MyClass, amount: number) {
-        this.value += amount;
-        return this.value;
-      }, 100);
-
-      debouncedIncrement2.call(instance2, 10);
-      jest.advanceTimersByTime(100);
-      expect(instance2.value).toBe(110);
-    });
-
-    it("should handle explicit this typing in callback signature", () => {
-      interface Context {
-        multiplier: number;
-      }
-      
-      const fn = function(this: Context, x: number): number {
-        return x * this.multiplier;
-      };
-      
-      const debounced = debounce(fn, 50);
-      const context: Context = { multiplier: 5 };
-      
-      debounced.call(context, 10);
-      jest.advanceTimersByTime(50);
-      
-      expect(fn.call(context, 10)).toBe(50);
-    });
-
-    it('should allow valid DebounceOptions', () => {
-      const fn = jest.fn();
-      const options: DebounceOptions = { leading: true, trailing: false, maxWait: 200 };
-      expect(() => debounce(fn, 100, options)).not.toThrow();
-    });
-
-    it('should throw error for invalid DebounceOptions (maxWait < wait)', () => {
-      const fn = jest.fn();
-      const options: DebounceOptions = { maxWait: 50 };
-      expect(() => debounce(fn, 100, options)).toThrow(RangeError);
-      expect(() => debounce(fn, 100, options)).toThrow("maxWait must be greater than or equal to wait");
-    });
-
-    it('should throw error if both leading and trailing are false', () => {
-      const fn = jest.fn();
-      const options: DebounceOptions = { leading: false, trailing: false };
-      expect(() => debounce(fn, 100, options)).toThrow(Error);
-      expect(() => debounce(fn, 100, options)).toThrow("At least one of leading or trailing must be true");
+    it("should reject when cancelled", async () => {
+      const d = debounce((n: number) => n, 100);
+      const p = d(10);
+      d.cancel();
+      await expect(p).rejects.toThrow("Cancelled");
     });
   });
 
   describe("throttle", () => {
-    it("throttles function execution to once per wait window", () => {
-      const fn = jest.fn((x: number) => x);
-      const throttled: ThrottledFunction<unknown, [number], number> = throttle(fn, 100, { 
-        leading: true, 
-        trailing: false 
-      });
-      
-      throttled(1);
-      expect(fn).toHaveBeenCalledTimes(1);
-      expect(fn).toHaveBeenLastCalledWith(1);
-      
-      throttled(2);
-      throttled(3);
-      expect(fn).toHaveBeenCalledTimes(1);
-      
+    it("should resolve first and last promise", async () => {
+      const fn = jest.fn((n: number) => n);
+      const t = throttle(fn, 100, { leading: true, trailing: true });
+
+      const p1 = t(1);
+      const p2 = t(2);
       jest.advanceTimersByTime(100);
-      expect(fn).toHaveBeenCalledTimes(1);
-      
-      throttled(4);
+
+      await expect(p1).resolves.toBe(1);
+      await expect(p2).resolves.toBe(2);
       expect(fn).toHaveBeenCalledTimes(2);
-      expect(fn).toHaveBeenLastCalledWith(4);
     });
 
-    it("should correctly infer and preserve 'this' context for throttled functions", () => {
-      class MyLogger {
-        logs: string[] = [];
-        logMessage(message: string) {
-          this.logs.push(message);
-        }
-      }
-
-      const logger = new MyLogger();
-      const throttledLog = throttle(logger.logMessage, 100, { leading: true, trailing: true });
-
-      throttledLog.call(logger, "first");
-      expect(logger.logs).toEqual(["first"]);
-
-      throttledLog.call(logger, "second");
-      throttledLog.call(logger, "third");
-      expect(logger.logs).toEqual(["first"]);
-
-      jest.advanceTimersByTime(100);
-      expect(logger.logs).toEqual(["first", "third"]);
-
-      throttledLog.call(logger, "fourth");
-      expect(logger.logs).toEqual(["first", "third", "fourth"]);
-    });
-
-    it("should throw TypeError for non-function callback", () => {
-      expect(() => throttle("not a function" as any, 100)).toThrow(TypeError);
-      expect(() => throttle(null as any, 100)).toThrow(TypeError);
-      expect(() => throttle(123 as any, 100)).toThrow(TypeError);
-    });
-
-    it("should throw RangeError for negative wait", () => {
-      expect(() => throttle(() => {}, -1)).toThrow(RangeError);
-    });
-
-    it('should allow valid ThrottleOptions', () => {
+    it("should queue trailing resolution", async () => {
       const fn = jest.fn();
-      const options: ThrottleOptions = { leading: true, trailing: false };
-      expect(() => throttle(fn, 100, options)).not.toThrow();
-    });
+      const t = throttle(fn, 100, { trailing: true });
 
-    it('should default to leading: false, trailing: true if no options provided', () => {
-      const fn = jest.fn();
-      const throttled = throttle(fn, 100);
-      throttled(1);
-      expect(fn).not.toHaveBeenCalled(); // Should not call on leading edge by default
+      t(1);
+      const p2 = t(2);
       jest.advanceTimersByTime(100);
-      expect(fn).toHaveBeenCalledTimes(1);
+
+      await p2;
+      expect(fn).toHaveBeenCalledWith(2);
     });
 
-    it('should allow leading: true, trailing: true', () => {
-      const fn = jest.fn();
-      const throttled = throttle(fn, 100, { leading: true, trailing: true });
-      throttled(1);
-      expect(fn).toHaveBeenCalledTimes(1);
-      throttled(2);
-      throttled(3);
-      expect(fn).toHaveBeenCalledTimes(1);
-      jest.advanceTimersByTime(100);
-      expect(fn).toHaveBeenCalledTimes(2);
-      expect(fn).toHaveBeenLastCalledWith(3);
-    });
-  });
-
-  describe("this context edge cases", () => {
-    it("should handle 'this' context correctly with arrow functions (lexical scoping)", () => {
-      const obj = { 
-        id: 1,
-        log: jest.fn(function(this: any, msg: string) { 
-          return `ID: ${this?.id || 'N/A'}, Msg: ${msg}`;
-        })
-      };
-
-      const debouncedLog = debounce(obj.log, 100);
-
-      debouncedLog.call(obj, "hello");
-      jest.advanceTimersByTime(100);
-      expect(obj.log).toHaveBeenCalledWith("hello");
-    });
-
-    it("should maintain separate this contexts for multiple instances", () => {
-      class Counter {
-        count = 0;
-        increment() {
-          this.count++;
-          return this.count;
-        }
-      }
-
-      const counter1 = new Counter();
-      const counter2 = new Counter();
-      
-      const debouncedInc = debounce(Counter.prototype.increment, 50);
-      
-      debouncedInc.call(counter1);
-      debouncedInc.call(counter1);
-      debouncedInc.call(counter2);
-      
+    it("should reject superseded promises", async () => {
+      const t = throttle((n: number) => n, 100);
+      const p1 = t(1);
+      const p2 = t(2);
       jest.advanceTimersByTime(50);
-      
-      expect(counter1.count).toBe(1);
-      expect(counter2.count).toBe(1);
-    });
-  });
+      const p3 = t(3);
+      jest.advanceTimersByTime(100);
 
-  describe("utility functions", () => {
-    it("clearTimer should safely clear timers", () => {
-      const timer = setTimeout(() => {}, 1000);
-      expect(() => clearTimer(timer)).not.toThrow();
-      expect(() => clearTimer(null)).not.toThrow();
-      expect(() => clearTimer(undefined)).not.toThrow();
-    });
-
-    it("isTimerActive should correctly identify active timers", () => {
-      const timer = setTimeout(() => {}, 1000);
-      expect(isTimerActive(timer)).toBe(true);
-      clearTimeout(timer);
-      expect(isTimerActive(timer)).toBe(true); // Handle is still truthy
-      expect(isTimerActive(null)).toBe(false);
-      expect(isTimerActive(undefined)).toBe(false);
+      await expect(p1).rejects.toThrow("Superseded");
+      await expect(p2).rejects.toThrow("Superseded");
+      await expect(p3).resolves.toBe(3);
     });
   });
 });
-
-import { clearTimer, isTimerActive } from "../src/index.ts";

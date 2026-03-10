@@ -1,6 +1,6 @@
 {
   "name": "@adametherzlab/debounce-ts",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Debounce & throttle — leading/trailing edge, cancel, flush",
   "type": "module",
   "main": "./dist/index.js",
