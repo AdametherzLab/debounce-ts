@@ -2,11 +2,15 @@
  * Configuration options for debouncing function calls.
  */
 export interface DebounceOptions {
-  /** Whether to invoke on the leading edge of the timeout. */
+  /** Whether to invoke on the leading edge of the timeout. Defaults to `false`. */
   readonly leading?: boolean;
-  /** Whether to invoke on the trailing edge of the timeout. */
+  /** Whether to invoke on the trailing edge of the timeout. Defaults to `true`. */
   readonly trailing?: boolean;
-  /** The maximum time to wait before invoking, in milliseconds. */
+  /** 
+   * The maximum time to wait before invoking, in milliseconds. 
+   * If provided, the function will be invoked at most once every `maxWait` milliseconds.
+   * Must be greater than or equal to `wait`.
+   */
   readonly maxWait?: number;
 }
 
@@ -14,9 +18,9 @@ export interface DebounceOptions {
  * Configuration options for throttling function calls.
  */
 export interface ThrottleOptions {
-  /** Whether to invoke on the leading edge of the interval. */
+  /** Whether to invoke on the leading edge of the interval. Defaults to `false`. */
   readonly leading?: boolean;
-  /** Whether to invoke on the trailing edge of the interval. */
+  /** Whether to invoke on the trailing edge of the interval. Defaults to `true`. */
   readonly trailing?: boolean;
 }
 

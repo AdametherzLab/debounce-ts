@@ -1,6 +1,6 @@
 import { describe, it, expect, jest, beforeEach, afterEach } from "bun:test";
 import { debounce, throttle } from "../src/index.ts";
-import type { DebouncedFunction, ThrottledFunction } from "../src/index.ts";
+import type { DebouncedFunction, ThrottledFunction, DebounceOptions, ThrottleOptions } from "../src/index.ts";
 
 describe("debounce-ts public API", () => {
   beforeEach(() => {
@@ -132,6 +132,26 @@ describe("debounce-ts public API", () => {
       
       expect(fn.call(context, 10)).toBe(50);
     });
+
+    it('should allow valid DebounceOptions', () => {
+      const fn = jest.fn();
+      const options: DebounceOptions = { leading: true, trailing: false, maxWait: 200 };
+      expect(() => debounce(fn, 100, options)).not.toThrow();
+    });
+
+    it('should throw error for invalid DebounceOptions (maxWait < wait)', () => {
+      const fn = jest.fn();
+      const options: DebounceOptions = { maxWait: 50 };
+      expect(() => debounce(fn, 100, options)).toThrow(RangeError);
+      expect(() => debounce(fn, 100, options)).toThrow("maxWait must be greater than or equal to wait");
+    });
+
+    it('should throw error if both leading and trailing are false', () => {
+      const fn = jest.fn();
+      const options: DebounceOptions = { leading: false, trailing: false };
+      expect(() => debounce(fn, 100, options)).toThrow(Error);
+      expect(() => debounce(fn, 100, options)).toThrow("At least one of leading or trailing must be true");
+    });
   });
 
   describe("throttle", () => {
@@ -191,6 +211,34 @@ describe("debounce-ts public API", () => {
 
     it("should throw RangeError for negative wait", () => {
       expect(() => throttle(() => {}, -1)).toThrow(RangeError);
+    });
+
+    it('should allow valid ThrottleOptions', () => {
+      const fn = jest.fn();
+      const options: ThrottleOptions = { leading: true, trailing: false };
+      expect(() => throttle(fn, 100, options)).not.toThrow();
+    });
+
+    it('should default to leading: false, trailing: true if no options provided', () => {
+      const fn = jest.fn();
+      const throttled = throttle(fn, 100);
+      throttled(1);
+      expect(fn).not.toHaveBeenCalled(); // Should not call on leading edge by default
+      jest.advanceTimersByTime(100);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('should allow leading: true, trailing: true', () => {
+      const fn = jest.fn();
+      const throttled = throttle(fn, 100, { leading: true, trailing: true });
+      throttled(1);
+      expect(fn).toHaveBeenCalledTimes(1);
+      throttled(2);
+      throttled(3);
+      expect(fn).toHaveBeenCalledTimes(1);
+      jest.advanceTimersByTime(100);
+      expect(fn).toHaveBeenCalledTimes(2);
+      expect(fn).toHaveBeenLastCalledWith(3);
     });
   });
 

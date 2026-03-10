@@ -27,18 +27,23 @@ import type { DebounceOptions, TimerHandle, DebouncedFunction } from "./types.js
 export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
   callback: (this: TThis, ...args: TArgs) => TReturn,
   wait: number,
-  options: DebounceOptions = {}
+  options?: DebounceOptions // Make options optional
 ): DebouncedFunction<TThis, TArgs, TReturn> {
   if (wait < 0) {
     throw new RangeError("wait must be a non-negative number");
   }
-  if (options.maxWait !== undefined && options.maxWait < wait) {
+
+  const resolvedOptions: Required<DebounceOptions> = {
+    leading: options?.leading ?? false,
+    trailing: options?.trailing ?? true,
+    maxWait: options?.maxWait,
+  };
+
+  if (resolvedOptions.maxWait !== undefined && resolvedOptions.maxWait < wait) {
     throw new RangeError("maxWait must be greater than or equal to wait");
   }
 
-  const { leading = false, trailing = true, maxWait } = options;
-
-  if (!leading && !trailing) {
+  if (!resolvedOptions.leading && !resolvedOptions.trailing) {
     throw new Error("At least one of leading or trailing must be true");
   }
 
@@ -65,9 +70,9 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
   }
 
   function startMaxTimer(): void {
-    if (maxWait !== undefined && maxTimerId === undefined) {
+    if (resolvedOptions.maxWait !== undefined && maxTimerId === undefined) {
       const elapsed = Date.now() - lastInvokeTime;
-      maxTimerId = setTimeout(maxTimerExpired, maxWait - elapsed);
+      maxTimerId = setTimeout(maxTimerExpired, resolvedOptions.maxWait - elapsed);
     }
   }
 
@@ -86,7 +91,7 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
     lastInvokeTime = time;
     startTimer(wait);
     startMaxTimer();
-    return leading ? invokeFunc(time) : result;
+    return resolvedOptions.leading ? invokeFunc(time) : result;
   }
 
   function remainingWait(time: number): number {
@@ -94,11 +99,11 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
     const timeSinceLastInvoke = time - lastInvokeTime;
     const timeWaiting = wait - timeSinceLastCall;
 
-    if (maxWait === undefined) {
+    if (resolvedOptions.maxWait === undefined) {
       return timeWaiting;
     }
     
-    const maxWaitRemaining = maxWait - timeSinceLastInvoke;
+    const maxWaitRemaining = resolvedOptions.maxWait - timeSinceLastInvoke;
     return Math.min(timeWaiting, maxWaitRemaining);
   }
 
@@ -110,7 +115,7 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
       lastCallTime === undefined ||
       timeSinceLastCall >= wait ||
       timeSinceLastCall < 0 ||
-      (maxWait !== undefined && timeSinceLastInvoke >= maxWait)
+      (resolvedOptions.maxWait !== undefined && timeSinceLastInvoke >= resolvedOptions.maxWait)
     );
   }
 
@@ -138,7 +143,7 @@ export function debounce<TThis, TArgs extends readonly unknown[], TReturn>(
   function trailingEdge(time: number): TReturn | undefined {
     clearTimers();
     
-    if (trailing && lastArgs) {
+    if (resolvedOptions.trailing && lastArgs) {
       return invokeFunc(time);
     }
     lastArgs = undefined;

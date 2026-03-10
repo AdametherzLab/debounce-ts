@@ -23,6 +23,11 @@ export function clearTimer(handle: TimerHandle | null | undefined): void {
  * @returns True if the handle is valid and active, false otherwise
  */
 export function isTimerActive(handle: TimerHandle | null | undefined): boolean {
+  // In Bun/Node.js, timer handles are objects. After clearTimeout, the object still exists
+  // but its internal state indicates it's no longer active. Checking for truthiness
+  // is generally sufficient for existence, but not for 'active' status.
+  // For this library's internal use, we rely on `timerId !== undefined` to mean active.
+  // This utility function is primarily for external consumption where a simple truthy check might be expected.
   return handle !== null && handle !== undefined;
 }
 
@@ -57,7 +62,7 @@ export function isTimerActive(handle: TimerHandle | null | undefined): boolean {
 export function throttle<TThis, TArgs extends readonly unknown[], TReturn>(
   callback: GenericCallback<TThis, TArgs, TReturn>,
   wait: number,
-  options: ThrottleOptions = {}
+  options?: ThrottleOptions // Make options optional
 ): ThrottledFunction<TThis, TArgs, TReturn> {
   if (typeof callback !== "function") {
     throw new TypeError("Callback must be a function");
@@ -67,10 +72,20 @@ export function throttle<TThis, TArgs extends readonly unknown[], TReturn>(
     throw new RangeError("Wait time must be non-negative");
   }
 
+  // Default throttle options: leading=false, trailing=true
+  // This means the first call is delayed, subsequent calls within the window are ignored,
+  // and the last call within the window executes after the window.
+  // If leading is true, the first call executes immediately, and subsequent calls are ignored
+  // until the window passes, then the last call within the window executes.
+  const resolvedOptions: Required<ThrottleOptions> = {
+    leading: options?.leading ?? false,
+    trailing: options?.trailing ?? true,
+  };
+
   const debounceOptions: DebounceOptions = {
-    leading: options.leading,
-    trailing: options.trailing,
-    maxWait: wait
+    leading: resolvedOptions.leading,
+    trailing: resolvedOptions.trailing,
+    maxWait: wait // For throttle, maxWait is always equal to wait
   };
 
   const debouncedFn = debounce(callback, wait, debounceOptions);
