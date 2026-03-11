@@ -36,12 +36,16 @@ export function isTimerActive(handle: TimerHandle | null | undefined): boolean {
  * per every `wait` milliseconds. Subsequent calls within the wait period
  * are deferred to the trailing edge unless disabled via options.
  *
- * Type-safe `this` context: The returned throttled function preserves the `this` type
- * of the original callback, ensuring proper typing when the callback relies on
- * a specific `this` context.
+ * Type-safe `this` context: The returned throttled function, its `flush` and `cancel` methods
+ * correctly infer and preserve the `this` context of the original callback, improving type safety
+ * and developer experience.
  *
  * Implemented by delegating to debounce with `maxWait` equal to `wait`,
  * ensuring periodic execution while batching rapid successive calls.
+ *
+ * @template TThis - The type of `this` context for the callback function.
+ * @template TArgs - The type of arguments for the callback function.
+ * @template TReturn - The return type of the callback function.
  *
  * @param callback - The function to throttle. Can have an explicit `this` type.
  * @param wait - The throttle interval in milliseconds (must be non-negative)
@@ -49,15 +53,41 @@ export function isTimerActive(handle: TimerHandle | null | undefined): boolean {
  * @returns A throttled function with cancel, flush, and pending methods
  * @throws {TypeError} If callback is not a function
  * @throws {RangeError} If wait time is negative
+ *
+ * @example
+ * // Basic usage
+ * const log = throttle((text: string) => console.log(text), 200);
+ * log('hello'); // Will log 'hello' immediately (if leading: true) or after 200ms (if leading: false)
+ *
  * @example
  * // With class method and this context
  * class Logger {
  *   logs: string[] = [];
- *   add(msg: string) { this.logs.push(msg); }
+ *   add(msg: string) {
+ *     this.logs.push(msg);
+ *     return this.logs.length;
+ *   }
  * }
  * const logger = new Logger();
- * const throttled = throttle(logger.add, 100, { leading: true });
- * throttled.call(logger, "message"); // Typesafe this context
+ * const throttledAdd = throttle(logger.add, 100, { leading: true });
+ * // `this` context is correctly inferred and preserved
+ * throttledAdd.call(logger, "message").then(len => console.log(len)); // 1
+ *
+ * @example
+ * // Using `flush` with `this` context on a throttled function
+ * class DataProcessor {
+ *   data: number[] = [];
+ *   process(value: number) {
+ *     this.data.push(value);
+ *     return this.data.reduce((sum, v) => sum + v, 0);
+ *   }
+ * }
+ * const processor = new DataProcessor();
+ * const throttledProcess = throttle(processor.process, 500, { leading: false, trailing: true });
+ * throttledProcess.call(processor, 10);
+ * throttledProcess.call(processor, 20);
+ * const sum = throttledProcess.flush(); // Immediately processes with last args and `this`
+ * console.log(sum); // 30
  */
 export function throttle<TThis, TArgs extends readonly unknown[], TReturn>(
   callback: GenericCallback<TThis, TArgs, TReturn>,
@@ -88,6 +118,8 @@ export function throttle<TThis, TArgs extends readonly unknown[], TReturn>(
     maxWait: wait // For throttle, maxWait is always equal to wait
   };
 
+  // The `debounce` function already handles `this` context correctly for its main function
+  // and its `cancel`/`flush` methods. We just need to cast it to `ThrottledFunction`.
   const debouncedFn = debounce(callback, wait, debounceOptions);
 
   return debouncedFn as ThrottledFunction<TThis, TArgs, TReturn>;

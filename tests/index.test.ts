@@ -74,6 +74,51 @@ describe("Promise-based Debounce/Throttle", () => {
       await expect(p).resolves.toBe(20);
       expect(fn).toHaveBeenCalledTimes(1);
     });
+
+    it("should preserve `this` context for debounced function calls", async () => {
+      class MyClass {
+        value: number = 10;
+        multiply(n: number) {
+          return this.value * n;
+        }
+      }
+      const instance = new MyClass();
+      const debouncedMultiply = debounce(instance.multiply, 100);
+
+      const p = debouncedMultiply.call(instance, 5);
+      jest.advanceTimersByTime(100);
+      await expect(p).resolves.toBe(50);
+    });
+
+    it("should preserve `this` context for `flush`", async () => {
+      class MyClass {
+        value: number = 10;
+        multiply(n: number) {
+          return this.value * n;
+        }
+      }
+      const instance = new MyClass();
+      const debouncedMultiply = debounce(instance.multiply, 100, { leading: false, trailing: true });
+
+      debouncedMultiply.call(instance, 5);
+      const result = debouncedMultiply.flush();
+      expect(result).toBe(50);
+    });
+
+    it("should preserve `this` context for `cancel` (no direct return value, but ensures no errors)", async () => {
+      class MyClass {
+        value: number = 10;
+        multiply(n: number) {
+          return this.value * n;
+        }
+      }
+      const instance = new MyClass();
+      const debouncedMultiply = debounce(instance.multiply, 100);
+
+      const p = debouncedMultiply.call(instance, 5);
+      debouncedMultiply.cancel();
+      await expect(p).rejects.toThrow("Cancelled");
+    });
   });
 
   describe("throttle", () => {
@@ -136,6 +181,51 @@ describe("Promise-based Debounce/Throttle", () => {
 
       await expect(p2).resolves.toBe(2);
       expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it("should preserve `this` context for throttled function calls", async () => {
+      class MyClass {
+        value: number = 20;
+        divide(n: number) {
+          return this.value / n;
+        }
+      }
+      const instance = new MyClass();
+      const throttledDivide = throttle(instance.divide, 100, { leading: true });
+
+      const p = throttledDivide.call(instance, 2);
+      jest.advanceTimersByTime(100);
+      await expect(p).resolves.toBe(10);
+    });
+
+    it("should preserve `this` context for `flush` on throttled function", async () => {
+      class MyClass {
+        value: number = 20;
+        divide(n: number) {
+          return this.value / n;
+        }
+      }
+      const instance = new MyClass();
+      const throttledDivide = throttle(instance.divide, 100, { leading: false, trailing: true });
+
+      throttledDivide.call(instance, 2);
+      const result = throttledDivide.flush();
+      expect(result).toBe(10);
+    });
+
+    it("should preserve `this` context for `cancel` on throttled function", async () => {
+      class MyClass {
+        value: number = 20;
+        divide(n: number) {
+          return this.value / n;
+        }
+      }
+      const instance = new MyClass();
+      const throttledDivide = throttle(instance.divide, 100);
+
+      const p = throttledDivide.call(instance, 2);
+      throttledDivide.cancel();
+      await expect(p).rejects.toThrow("Cancelled");
     });
   });
 });
